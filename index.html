@@ -7,6 +7,609 @@
 </head>
 <body>
     <h1>Assainment 20</h1>
+    <h1>1. Start to Create an api for register user</h1>
+
+    // server.js
+require("dotenv").config();
+const express = require("express");
+const mongoose = require("mongoose");
+const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+
+const app = express();
+app.use(express.json());
+
+// Connect to MongoDB
+mongoose.connect(process.env.MONGO_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(() => console.log("MongoDB Connected"))
+  .catch(err => console.log(err));
+
+// User Schema
+const UserSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  email: { type: String, required: true, unique: true },
+  password: { type: String, required: true },
+});
+
+const User = mongoose.model("User", UserSchema);
+
+// Register Route
+app.post("/register", async (req, res) => {
+  try {
+    const { name, email, password } = req.body;
     
+    // Check if user exists
+    let user = await User.findOne({ email });
+    if (user) return res.status(400).json({ message: "User already exists" });
+    
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    
+    // Create new user
+    user = new User({ name, email, password: hashedPassword });
+    await user.save();
+    
+    // Generate JWT Token
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "1h" });
+    
+    res.status(201).json({ message: "User registered successfully", token });
+  } catch (error) {
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+<h1>1. End  Create an api for register user</h1>
+
+<h1>2. Start Create an api for login user</h1>
+
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const User = require('./models/User'); // Assuming a Mongoose user model
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+const SECRET_KEY = 'your_secret_key';
+
+app.use(bodyParser.json());
+
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost:27017/authDB', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => console.log("MongoDB Connected"))
+  .catch(err => console.error("MongoDB Connection Error: ", err));
+
+// Login Route
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    
+    try {
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        const token = jwt.sign({ id: user._id }, SECRET_KEY, { expiresIn: '1h' });
+        res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+<h1>2. End Create an api for login user</h1>
+
+<h1>3. Start Only authorized user can create, read, delete and update portfolio</h1>
+
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const User = require('./models/User'); // Assuming a Mongoose user model
+const Portfolio = require('./models/Portfolio'); // Assuming a Mongoose portfolio model
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+const SECRET_KEY = 'your_secret_key';
+
+app.use(bodyParser.json());
+
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost:27017/authDB', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => console.log("MongoDB Connected"))
+  .catch(err => console.error("MongoDB Connection Error: ", err));
+
+// Middleware for authentication
+const authenticate = (req, res, next) => {
+    const token = req.header('Authorization');
+    if (!token) return res.status(401).json({ message: "Access denied. No token provided." });
+    
+    try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        res.status(400).json({ message: "Invalid token." });
+    }
+};
+
+// Login Route
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    
+    try {
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        const token = jwt.sign({ id: user._id }, SECRET_KEY, { expiresIn: '1h' });
+        res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Portfolio CRUD Routes (Protected)
+app.post('/portfolio', authenticate, async (req, res) => {
+    try {
+        const newPortfolio = new Portfolio({ ...req.body, user: req.user.id });
+        const savedPortfolio = await newPortfolio.save();
+        res.json(savedPortfolio);
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.get('/portfolio', authenticate, async (req, res) => {
+    try {
+        const portfolios = await Portfolio.find({ user: req.user.id });
+        res.json(portfolios);
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.put('/portfolio/:id', authenticate, async (req, res) => {
+    try {
+        const updatedPortfolio = await Portfolio.findOneAndUpdate(
+            { _id: req.params.id, user: req.user.id },
+            req.body,
+            { new: true }
+        );
+        if (!updatedPortfolio) return res.status(404).json({ message: "Portfolio not found" });
+        res.json(updatedPortfolio);
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.delete('/portfolio/:id', authenticate, async (req, res) => {
+    try {
+        const deletedPortfolio = await Portfolio.findOneAndDelete({ _id: req.params.id, user: req.user.id });
+        if (!deletedPortfolio) return res.status(404).json({ message: "Portfolio not found" });
+        res.json({ message: "Portfolio deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+<h1>3. End Only authorized user can create, read, delete and update portfolio</h1>
+
+<h1>4. Start After login, they can perform these api if they have a token via jwt or cookie. </h1>
+
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const cookieParser = require('cookie-parser');
+const User = require('./models/User'); // Assuming a Mongoose user model
+const Portfolio = require('./models/Portfolio'); // Assuming a Mongoose portfolio model
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+const SECRET_KEY = 'your_secret_key';
+
+app.use(bodyParser.json());
+app.use(cookieParser());
+
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost:27017/authDB', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => console.log("MongoDB Connected"))
+  .catch(err => console.error("MongoDB Connection Error: ", err));
+
+// Middleware for authentication
+const authenticate = (req, res, next) => {
+    const token = req.header('Authorization') || req.cookies.token;
+    if (!token) return res.status(401).json({ message: "Access denied. No token provided." });
+    
+    try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        res.status(400).json({ message: "Invalid token." });
+    }
+};
+
+// Login Route
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    
+    try {
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        const token = jwt.sign({ id: user._id }, SECRET_KEY, { expiresIn: '1h' });
+        res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'strict' });
+        res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Portfolio CRUD Routes (Protected)
+app.post('/portfolio', authenticate, async (req, res) => {
+    try {
+        const newPortfolio = new Portfolio({ ...req.body, user: req.user.id });
+        const savedPortfolio = await newPortfolio.save();
+        res.json(savedPortfolio);
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.get('/portfolio', authenticate, async (req, res) => {
+    try {
+        const portfolios = await Portfolio.find({ user: req.user.id });
+        res.json(portfolios);
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.put('/portfolio/:id', authenticate, async (req, res) => {
+    try {
+        const updatedPortfolio = await Portfolio.findOneAndUpdate(
+            { _id: req.params.id, user: req.user.id },
+            req.body,
+            { new: true }
+        );
+        if (!updatedPortfolio) return res.status(404).json({ message: "Portfolio not found" });
+        res.json(updatedPortfolio);
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.delete('/portfolio/:id', authenticate, async (req, res) => {
+    try {
+        const deletedPortfolio = await Portfolio.findOneAndDelete({ _id: req.params.id, user: req.user.id });
+        if (!deletedPortfolio) return res.status(404).json({ message: "Portfolio not found" });
+        res.json({ message: "Portfolio deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
+<h1>4. End After login, they can perform these api if they have a token via jwt or cookie. </h1>
+
+<h1>5. Start Create an API for portfolio and use post method for this. The portfolio body should contain -  title, description, img, codelink, livelink etc.</h1>
+
+const express = require('express');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
+const bodyParser = require('body-parser');
+const mongoose = require('mongoose');
+const cookieParser = require('cookie-parser');
+const User = require('./models/User'); // Assuming a Mongoose user model
+const Portfolio = require('./models/Portfolio'); // Assuming a Mongoose portfolio model
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+const SECRET_KEY = 'your_secret_key';
+
+app.use(bodyParser.json());
+app.use(cookieParser());
+
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost:27017/authDB', {
+    useNewUrlParser: true,
+    useUnifiedTopology: true
+}).then(() => console.log("MongoDB Connected"))
+  .catch(err => console.error("MongoDB Connection Error: ", err));
+
+// Middleware for authentication
+const authenticate = (req, res, next) => {
+    const token = req.header('Authorization') || req.cookies.token;
+    if (!token) return res.status(401).json({ message: "Access denied. No token provided." });
+    
+    try {
+        const decoded = jwt.verify(token, SECRET_KEY);
+        req.user = decoded;
+        next();
+    } catch (err) {
+        res.status(400).json({ message: "Invalid token." });
+    }
+};
+
+// Login Route
+app.post('/login', async (req, res) => {
+    const { email, password } = req.body;
+    
+    try {
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) {
+            return res.status(400).json({ message: "Invalid credentials" });
+        }
+
+        const token = jwt.sign({ id: user._id }, SECRET_KEY, { expiresIn: '1h' });
+        res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'strict' });
+        res.json({ token, user: { id: user._id, name: user.name, email: user.email } });
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Portfolio Model
+const portfolioSchema = new mongoose.Schema({
+    title: String,
+    description: String,
+    img: String,
+    codelink: String,
+    livelink: String,
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+});
+const Portfolio = mongoose.model('Portfolio', portfolioSchema);
+
+// Create Portfolio Route
+app.post('/portfolio', authenticate, async (req, res) => {
+    const { title, description, img, codelink, livelink } = req.body;
+    try {
+        const newPortfolio = new Portfolio({
+            title,
+            description,
+            img,
+            codelink,
+            livelink,
+            user: req.user.id
+        });
+        const savedPortfolio = await newPortfolio.save();
+        res.json(savedPortfolio);
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Get Portfolio Route
+app.get('/portfolio', authenticate, async (req, res) => {
+    try {
+        const portfolios = await Portfolio.find({ user: req.user.id });
+        res.json(portfolios);
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Update Portfolio Route
+app.put('/portfolio/:id', authenticate, async (req, res) => {
+    try {
+        const updatedPortfolio = await Portfolio.findOneAndUpdate(
+            { _id: req.params.id, user: req.user.id },
+            req.body,
+            { new: true }
+        );
+        if (!updatedPortfolio) return res.status(404).json({ message: "Portfolio not found" });
+        res.json(updatedPortfolio);
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// Delete Portfolio Route
+app.delete('/portfolio/:id', authenticate, async (req, res) => {
+    try {
+        const deletedPortfolio = await Portfolio.findOneAndDelete({ _id: req.params.id, user: req.user.id });
+        if (!deletedPortfolio) return res.status(404).json({ message: "Portfolio not found" });
+        res.json({ message: "Portfolio deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
+<h1>5. End Create an API for portfolio and use post method for this. The portfolio body should contain -  title, description, img, codelink, livelink etc.</h1>
+
+<H1>6. Start Create an API to delete a portfolio</H1>
+
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost:27017/portfolioDB', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(() => console.log('MongoDB Connected'))
+  .catch(err => console.log(err));
+
+// Portfolio Schema
+const portfolioSchema = new mongoose.Schema({
+  title: String,
+  description: String,
+  img: String,
+  codeLink: String,
+  liveLink: String
+});
+
+const Portfolio = mongoose.model('Portfolio', portfolioSchema);
+
+// POST API for adding portfolio items
+app.post('/api/portfolio', async (req, res) => {
+  try {
+    const { title, description, img, codeLink, liveLink } = req.body;
+    const newPortfolio = new Portfolio({ title, description, img, codeLink, liveLink });
+    await newPortfolio.save();
+    res.status(201).json({ message: 'Portfolio item added successfully', data: newPortfolio });
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error', error });
+  }
+});
+
+// DELETE API for removing a portfolio item
+app.delete('/api/portfolio/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deletedPortfolio = await Portfolio.findByIdAndDelete(id);
+    if (!deletedPortfolio) {
+      return res.status(404).json({ message: 'Portfolio item not found' });
+    }
+    res.status(200).json({ message: 'Portfolio item deleted successfully', data: deletedPortfolio });
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error', error });
+  }
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
+
+<H1>6. End Create an API to delete a portfolio</H1>
+
+<h1>7. Start Create an API to update or edit a portfolio</h1>
+
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+
+const app = express();
+app.use(express.json());
+app.use(cors());
+
+// Connect to MongoDB
+mongoose.connect('mongodb://localhost:27017/portfolioDB', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+}).then(() => console.log('MongoDB Connected'))
+  .catch(err => console.log(err));
+
+// Portfolio Schema
+const portfolioSchema = new mongoose.Schema({
+  title: String,
+  description: String,
+  img: String,
+  codeLink: String,
+  liveLink: String
+});
+
+const Portfolio = mongoose.model('Portfolio', portfolioSchema);
+
+// POST API for adding portfolio items
+app.post('/api/portfolio', async (req, res) => {
+  try {
+    const { title, description, img, codeLink, liveLink } = req.body;
+    const newPortfolio = new Portfolio({ title, description, img, codeLink, liveLink });
+    await newPortfolio.save();
+    res.status(201).json({ message: 'Portfolio item added successfully', data: newPortfolio });
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error', error });
+  }
+});
+
+// DELETE API for removing a portfolio item
+app.delete('/api/portfolio/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const deletedPortfolio = await Portfolio.findByIdAndDelete(id);
+    if (!deletedPortfolio) {
+      return res.status(404).json({ message: 'Portfolio item not found' });
+    }
+    res.status(200).json({ message: 'Portfolio item deleted successfully', data: deletedPortfolio });
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error', error });
+  }
+});
+
+// PUT API for updating a portfolio item
+app.put('/api/portfolio/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, img, codeLink, liveLink } = req.body;
+    const updatedPortfolio = await Portfolio.findByIdAndUpdate(id, { title, description, img, codeLink, liveLink }, { new: true });
+    if (!updatedPortfolio) {
+      return res.status(404).json({ message: 'Portfolio item not found' });
+    }
+    res.status(200).json({ message: 'Portfolio item updated successfully', data: updatedPortfolio });
+  } catch (error) {
+    res.status(500).json({ message: 'Server Error', error });
+  }
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
+<h1>7. End  Create an API to update or edit a portfolio</h1>
+
+<h1>8. Start Create an API to read all the portfolio </h1>
+
+
+<h1>8. End Create an API to read all the portfolio </h1>
+
+
+
+<h1> </h1>
+
+
 </body>
 </html>
